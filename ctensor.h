@@ -73,9 +73,9 @@ ComplexTensor* Add (ComplexTensor* z1, ComplexTensor* z2);
 ComplexTensor* Sub (ComplexTensor* z1, ComplexTensor* z2);
 ComplexTensor* Mult (ComplexTensor* z1, ComplexTensor* z2);
 ComplexTensor* MatMul (ComplexTensor* z1, ComplexTensor* z2);
-ComplexTensor* FFT (ComplexTensor* z);
-ComplexTensor* iFFT (ComplexTensor* z);
 
+void FFT (ComplexTensor* z);
+void iFFT (ComplexTensor* z);
 void Backward (ComplexTensor* z);
 
 #endif

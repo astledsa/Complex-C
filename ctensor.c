@@ -5,6 +5,12 @@
 #include "complex.h"
 #include "ctensor.h"
 
+#define PI 3.14159265358979323846
+
+int is_power_of_two(int n) {
+    return (n > 0) && ((n & (n - 1)) == 0);
+}
+
 void free_complexmatrix (ComplexMatrix* matrix) {
     if (matrix != NULL) {
         free(matrix->array);
@@ -558,4 +564,47 @@ ComplexTensor* MatMul (ComplexTensor* z1, ComplexTensor* z2) {
     }
 
     return z3;
+}
+
+Complex* fft_1d(Complex* array, int size) {
+
+    if (size == 1) {
+        Complex* result = malloc(sizeof(Complex));
+        *result = *array;
+        return result;
+    }
+
+    if (!is_power_of_two(size)) {
+        return NULL;
+    }
+
+    Complex* even = malloc(sizeof(Complex) * size / 2);
+    Complex* odd = malloc(sizeof(Complex) * size / 2);
+
+    for (int i = 0; i < size / 2; i++) {
+        even[i] = array[2 * i];
+        odd[i] = array[2 * i + 1];
+    }
+
+    Complex* even_fft = fft_1d(even, size / 2);
+    Complex* odd_fft = fft_1d(odd, size / 2);
+
+    free(even);
+    free(odd);
+
+    Complex* result = malloc(sizeof(Complex) * size);
+    for (int k = 0; k < size / 2; k++) {
+
+        double angle = -2 * PI * k / size;
+        Complex twiddle_factor = {cos(angle), sin(angle)};
+
+        Complex* product = cMult(&twiddle_factor, &odd_fft[k]);
+        result[k] = *cAdd(&even_fft[k], product);
+        result[k + size / 2] = *cSub(&even_fft[k], product);
+    }
+
+    free(even_fft);
+    free(odd_fft);
+
+    return result;
 }
