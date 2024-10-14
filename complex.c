@@ -17,9 +17,9 @@ void* malloc_trace (size_t size) {
 void cPrint (Complex* z) {
     if (z->form == coordinate) {
         if (z->data.coord.imag < 0) {
-            printf("%f  %fi", z->data.coord.real, z->data.coord.imag);
+            printf("%f %fi ", z->data.coord.real, z->data.coord.imag);
         } else {
-            printf("%f + %fi", z->data.coord.real, z->data.coord.imag);
+            printf("%f+%fi ", z->data.coord.real, z->data.coord.imag);
         }
     } else {
         printf("%f∠%f", z->data.polar.mag, z->data.polar.ang);
@@ -178,7 +178,7 @@ Complex* cLog (Complex* z) {
     double r = log(z->data.polar.mag);
     double a = z->data.polar.ang;
 
-    Complex* nz = Init(r, a, polar);
+    Complex* nz = convert_to_coordinate(Init(r, a, polar));
 
     return nz;
 }
@@ -194,7 +194,7 @@ Complex* cSin (Complex* z) {
 
     Complex* nz = Init(real, imag, coordinate);
 
-    return z;
+    return nz;
 }
 
 Complex* cCos (Complex* z) {
@@ -208,7 +208,16 @@ Complex* cCos (Complex* z) {
 
     Complex* nz = Init(real, imag, coordinate);
 
-    return z;
+    return nz;
+}
+
+Complex* cScale (Complex* z, double scale) {
+    double real = z->data.coord.real * scale;
+    double imag = z->data.coord.imag * scale;
+
+    Complex* nz = Init(real, imag, coordinate);
+
+    return nz;
 }
 
 Complex* conjugate (Complex* z) {
@@ -217,5 +226,6 @@ Complex* conjugate (Complex* z) {
     Complex* z1 = Init(z->data.coord.real, -1 * z->data.coord.imag, coordinate);
     return z1;
 }
+
 
 // gcc complex.c -o exec

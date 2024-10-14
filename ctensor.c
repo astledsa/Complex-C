@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <time.h>
 #include <assert.h>
 #include "complex.h"
 #include "ctensor.h"
@@ -18,6 +19,27 @@ void free_complexmatrix (ComplexMatrix* matrix) {
     }
 }
 
+void cPrintMatrix (ComplexMatrix* z) {
+    int rows = z->shape[0];
+    int cols = z->shape[1];
+
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            cPrint(&z->array[(i * z->stride[0]) + (j * z->stride[1])]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
+void cPrintTensor (ComplexTensor* z, int grad) {
+    if (grad) {
+        cPrintMatrix(z->gradient);
+    } else {
+        cPrintMatrix(z->tensor_matrix);
+    }
+}
+
 double normal_random (double mean, double std) {
     double u1, u2, z1;
     do {
@@ -28,6 +50,98 @@ double normal_random (double mean, double std) {
     z1 = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
 
     return mean + std * z1;
+}
+
+Complex* fft_1d(Complex* array, int size, int inverse) {
+
+    if (size == 1) {
+        Complex* result = malloc(sizeof(Complex));
+        *result = *array;
+        return result;
+    }
+
+    if (!is_power_of_two(size)) {
+        return NULL;
+    }
+
+    Complex* even = (Complex*)malloc(sizeof(Complex) * (size / 2));
+    Complex* odd = (Complex*)malloc(sizeof(Complex) * (size / 2));
+
+    for (int i = 0; i < size / 2; i++) {
+        even[i] = array[2 * i];
+        odd[i] = array[(2 * i) + 1];
+    }
+    
+    Complex* even_fft = fft_1d(even, size / 2, inverse);
+    Complex* odd_fft = fft_1d(odd, size / 2, inverse);
+
+    free(even);
+    free(odd);
+
+    Complex* result = malloc(sizeof(Complex) * size);
+    for (int k = 0; k < size / 2; k++) {
+
+        double angle = (inverse ? 2 : -2) * PI * k / size;
+        Complex* twiddle_factor = Init(cos(angle), sin(angle), coordinate);
+
+        Complex* product = cMult(twiddle_factor, &odd_fft[k]);
+        result[k] = *cAdd(&even_fft[k], product);
+        result[k + size / 2] = *cSub(&even_fft[k], product);
+
+        if (inverse) {
+            result[k] = *cScale(&result[k], 0.5);
+            result[k + size / 2] = *cScale(&result[k + size / 2], 0.5);
+        }
+    }
+
+    free(even_fft);
+    free(odd_fft);
+
+    return result;
+}
+
+void fft_2d(ComplexMatrix* z, int inverse) {
+
+    int rows = z->shape[0];
+    int cols = z->shape[1];
+
+    if (!is_power_of_two(rows) || !is_power_of_two(cols)) {
+        fprintf(stderr, "Both dimensions must be powers of 2\n");
+        return;
+    }
+
+    for (int i = 0; i < rows; i++) {
+        Complex* row_fft = fft_1d(&z->array[i * z->stride[0]], cols, inverse);
+        for (int j = 0; j < cols; j++) {
+            z->array[(i * z->stride[0]) + (j * z->stride[1])] = row_fft[j];
+        }
+        free(row_fft);
+    }
+
+    Complex* col = malloc(sizeof(Complex) * rows);
+    for (int j = 0; j < cols; j++) {
+        for (int i = 0; i < rows; i++) {
+            col[i] = z->array[(i * z->stride[0]) + (j * z->stride[1])];
+        }
+        Complex* col_fft = fft_1d(col, rows, inverse);
+        for (int i = 0; i < rows; i++) {
+            z->array[(i * z->stride[0]) + (j * z->stride[1])] = col_fft[i];
+        }
+        free(col_fft);
+    }
+    free(col);
+
+    if (inverse) {
+        double scale = 1.0 / (rows * cols);
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                z->array[(i * z->stride[0]) + (j * z->stride[1])] = *cScale(
+                    &z->array[(i * z->stride[0]) + (j * z->stride[1])], 
+                    scale
+                );
+            }
+        }
+    }
 }
 
 ComplexMatrix* c_empty (int shape[2]) {
@@ -122,7 +236,7 @@ ComplexMatrix* c_sin (ComplexMatrix* z1, FreeFlag free) {
     switch (free) {
         
         case FREE_1 :
-            free_matrix(z1);
+            free_complexmatrix(z1);
             break;
         
         default:
@@ -147,7 +261,7 @@ ComplexMatrix* c_cos (ComplexMatrix* z1, FreeFlag free) {
     switch (free) {
         
         case FREE_1 :
-            free_matrix(z1);
+            free_complexmatrix(z1);
             break;
         
         default:
@@ -172,7 +286,7 @@ ComplexMatrix* c_log (ComplexMatrix* z1, FreeFlag free) {
     switch (free) {
         
         case FREE_1 :
-            free_matrix(z1);
+            free_complexmatrix(z1);
             break;
         
         default:
@@ -204,16 +318,16 @@ ComplexMatrix* c_add_matrix (ComplexMatrix* m1, ComplexMatrix* m2, FreeFlag free
     switch (free) {
         
         case FREE_1 :
-            free_matrix(m1);
+            free_complexmatrix(m1);
             break;
         
         case FREE_2 :
-            free_matrix(m2);
+            free_complexmatrix(m2);
             break;
         
         case FREE_BOTH :
-            free_matrix(m1);
-            free_matrix(m2);
+            free_complexmatrix(m1);
+            free_complexmatrix(m2);
             break;
         
         default:
@@ -245,16 +359,16 @@ ComplexMatrix* c_sub_matrix (ComplexMatrix* m1, ComplexMatrix* m2, FreeFlag free
     switch (free) {
         
         case FREE_1 :
-            free_matrix(m1);
+            free_complexmatrix(m1);
             break;
         
         case FREE_2 :
-            free_matrix(m2);
+            free_complexmatrix(m2);
             break;
         
         case FREE_BOTH :
-            free_matrix(m1);
-            free_matrix(m2);
+            free_complexmatrix(m1);
+            free_complexmatrix(m2);
             break;
         
         default:
@@ -286,16 +400,16 @@ ComplexMatrix* c_mult_matrix (ComplexMatrix* m1, ComplexMatrix* m2, FreeFlag fre
     switch (free) {
         
         case FREE_1 :
-            free_matrix(m1);
+            free_complexmatrix(m1);
             break;
         
         case FREE_2 :
-            free_matrix(m2);
+            free_complexmatrix(m2);
             break;
         
         case FREE_BOTH :
-            free_matrix(m1);
-            free_matrix(m2);
+            free_complexmatrix(m1);
+            free_complexmatrix(m2);
             break;
         
         default:
@@ -328,16 +442,16 @@ ComplexMatrix* c_matmul_matrix (ComplexMatrix* z1, ComplexMatrix* z2, FreeFlag f
     switch (free) {
         
         case FREE_1 :
-            free_matrix(z1);
+            free_complexmatrix(z1);
             break;
         
         case FREE_2 :
-            free_matrix(z2);
+            free_complexmatrix(z2);
             break;
         
         case FREE_BOTH :
-            free_matrix(z1);
-            free_matrix(z2);
+            free_complexmatrix(z1);
+            free_complexmatrix(z2);
             break;
         
         default:
@@ -357,14 +471,14 @@ ComplexMatrix* c_scalar (ComplexMatrix* m1, Complex* value, FreeFlag free) {
             new_matrix->array[
                 i * new_matrix->stride[0] +
                 j * new_matrix->stride[1]
-            ] = *cMult(&m1->array[i * m1->stride[0] + j * m1->stride[1]], &value); 
+            ] = *cMult(&m1->array[i * m1->stride[0] + j * m1->stride[1]], value); 
         }
     }
 
     switch (free) {
         
         case FREE_1 :
-            free_matrix(m1);
+            free_complexmatrix(m1);
             break;
         
         default:
@@ -405,7 +519,7 @@ ComplexTensor* Zeros (int shape[2], Bool requires_grad) {
 ComplexTensor* Ones (int shape[2], Bool requires_grad) {
 
     ComplexTensor* ones = createTensor(shape);
-    free_matrix(ones->tensor_matrix);
+    free_complexmatrix(ones->tensor_matrix);
     ones->tensor_matrix = c_ones_matrix(shape);
     ones->requires_grad = requires_grad;
 
@@ -439,7 +553,7 @@ ComplexTensor* Sin (ComplexTensor* z1) {
     new->parents[0] = z1;
     
     free_complexmatrix(new->tensor_matrix);
-    new->tensor_matrix = cSin(z1->tensor_matrix);
+    new->tensor_matrix = c_sin(z1->tensor_matrix, FREE_0);
 
     return new;
 };
@@ -452,7 +566,7 @@ ComplexTensor* Cos (ComplexTensor* z1) {
     new->parents[0] = z1;
     
     free_complexmatrix(new->tensor_matrix);
-    new->tensor_matrix = cCos(z1->tensor_matrix);
+    new->tensor_matrix = c_cos(z1->tensor_matrix, FREE_0);
 
     return new;
 };
@@ -465,7 +579,7 @@ ComplexTensor* Log (ComplexTensor* z1) {
     new->parents[0] = z1;
     
     free_complexmatrix(new->tensor_matrix);
-    new->tensor_matrix = cLog(z1->tensor_matrix);
+    new->tensor_matrix = c_log(z1->tensor_matrix, FREE_0);
 
     return new;
 };
@@ -566,45 +680,14 @@ ComplexTensor* MatMul (ComplexTensor* z1, ComplexTensor* z2) {
     return z3;
 }
 
-Complex* fft_1d(Complex* array, int size) {
-
-    if (size == 1) {
-        Complex* result = malloc(sizeof(Complex));
-        *result = *array;
-        return result;
-    }
-
-    if (!is_power_of_two(size)) {
-        return NULL;
-    }
-
-    Complex* even = malloc(sizeof(Complex) * size / 2);
-    Complex* odd = malloc(sizeof(Complex) * size / 2);
-
-    for (int i = 0; i < size / 2; i++) {
-        even[i] = array[2 * i];
-        odd[i] = array[2 * i + 1];
-    }
-
-    Complex* even_fft = fft_1d(even, size / 2);
-    Complex* odd_fft = fft_1d(odd, size / 2);
-
-    free(even);
-    free(odd);
-
-    Complex* result = malloc(sizeof(Complex) * size);
-    for (int k = 0; k < size / 2; k++) {
-
-        double angle = -2 * PI * k / size;
-        Complex twiddle_factor = {cos(angle), sin(angle)};
-
-        Complex* product = cMult(&twiddle_factor, &odd_fft[k]);
-        result[k] = *cAdd(&even_fft[k], product);
-        result[k + size / 2] = *cSub(&even_fft[k], product);
-    }
-
-    free(even_fft);
-    free(odd_fft);
-
-    return result;
+void FFT (ComplexTensor* z) {
+    fft_2d(z->tensor_matrix, 0);
 }
+
+void iFFT (ComplexTensor* z) {
+    fft_2d(z->tensor_matrix, 1);
+}
+
+
+
+// gcc ctensor.c complex.c -o exec

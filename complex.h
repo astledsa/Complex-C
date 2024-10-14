@@ -42,6 +42,7 @@ Complex* cAdd (Complex* z1, Complex* z2);
 Complex* cSub (Complex* z1, Complex* z2);
 Complex* cMult (Complex* z1, Complex* z2);
 Complex* cDiv (Complex* z1, Complex* z2);
+Complex* cScale (Complex* z1, double scale);
 Complex* conjugate (Complex* z);
 
 #endif
